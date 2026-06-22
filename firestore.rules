@@ -1,0 +1,145 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helper Functions ---
+    function isSignedIn() { return request.auth != null; }
+    function isVerified() { return isSignedIn(); }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function isAdmin() { return isSignedIn() && (
+      (request.auth.token.email != null && request.auth.token.email in ['duongnguyencam00@gmail.com', 'hungbato19@gmail.com', 'hungbato01@gmail.com', 'ducna224@gmail.com', 'ducna225@gmail.com']) ||
+      (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+       get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
+      exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+    ); }
+    
+    function isEditor() { return isSignedIn() && (
+      (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+       get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'editor')
+    ); }
+
+    function isValidUser(data) {
+      return data.name is string && data.name.size() <= 100 &&
+             (data.email == null || (data.email is string && data.email.size() <= 200)) &&
+             (data.role == null || (data.role in ['admin', 'editor', 'viewer', 'approver', 'guest']));
+    }
+
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+
+    // --- 1. Users Collection ---
+    match /users/{userId} {
+      function isValidUser(data) {
+        return data.name is string && data.name.size() <= 100 &&
+               (data.email == null || (data.email is string && data.email.size() <= 200)) &&
+               (data.role == null || (data.role in ['admin', 'editor', 'viewer', 'approver', 'guest']));
+      }
+      allow list, get: if isSignedIn();
+      allow create: if isSignedIn() && (isOwner(userId) || isAdmin()) && isValidUser(incoming());
+      allow update: if (isOwner(userId) || isAdmin()) && 
+                    isValidUser(incoming());
+      allow delete: if isAdmin();
+    }
+
+    // --- 2. Videos Collection ---
+    match /videos/{videoId} {
+      function isValidVideo(data) {
+        return data.title is string && data.title.size() <= 200 &&
+               data.youtubeUrl is string &&
+               (isAdmin() || data.ownerId == request.auth.uid) &&
+               data.createdAt is number;
+      }
+
+      function isEmailAdmin() {
+        return request.auth.token.email != null && 
+               request.auth.token.email in ['duongnguyencam00@gmail.com', 'hungbato19@gmail.com', 'hungbato01@gmail.com', 'ducna224@gmail.com', 'ducna225@gmail.com'];
+      }
+
+      allow get: if true; // Support share links
+      allow list: if isSignedIn() && (
+        isEmailAdmin() || 
+        resource.data.ownerId == request.auth.uid || 
+        (resource.data.get('editorIds', [])).hasAny([request.auth.uid])
+      );
+
+      allow create: if isSignedIn() && (isAdmin() || isEditor()) && isValidVideo(incoming());
+      allow update: if isSignedIn() && (
+        isOwner(existing().ownerId) || 
+        (existing().get('editorIds', [])).hasAny([request.auth.uid]) ||
+        isAdmin()
+      );
+      allow delete: if isOwner(existing().ownerId) || isAdmin();
+    }
+
+    // --- 3. Shared Links ---
+    match /sharedLinks/{linkId} {
+      allow read: if true;
+      allow create, delete: if isSignedIn() && (isAdmin() || isEditor());
+      allow update: if true; // For view count increment
+    }
+
+    // --- 4. Comments Collection ---
+    match /comments/{commentId} {
+      function isValidComment(data) {
+        return data.videoId is string &&
+               data.content is string && data.content.size() <= 6000 &&
+               data.createdAt is number &&
+               (data.userId == request.auth.uid || data.userId == 'guest' || data.userId == null);
+      }
+
+      function videoExists(vId) {
+        return exists(/databases/$(database)/documents/videos/$(vId));
+      }
+
+      function commentVideo() {
+        let vId = (request.method == 'create') ? request.resource.data.videoId : resource.data.videoId;
+        return get(/databases/$(database)/documents/videos/$(vId)).data;
+      }
+
+      allow read: if true; 
+      
+      allow create: if isValidComment(incoming()) && (incoming().videoId != null); 
+
+      allow update: if (
+        existing().userId == 'guest' || 
+        existing().userId == null ||
+        (isSignedIn() && (
+          isOwner(existing().userId) || 
+          isAdmin() ||
+          incoming().diff(existing()).affectedKeys().hasOnly(['reactions']) ||
+          (incoming().diff(existing()).affectedKeys().hasOnly(['resolved', 'priority', 'category']) && (isOwner(commentVideo().ownerId) || (commentVideo().get('editorIds', [])).hasAny([request.auth.uid]) || isAdmin()))
+        ))
+      );
+      
+      allow delete: if (
+        existing().userId == 'guest' || 
+        existing().userId == null ||
+        (isSignedIn() && (
+          isOwner(existing().userId) ||
+          isAdmin() ||
+          (isOwner(commentVideo().ownerId) || (commentVideo().get('editorIds', [])).hasAny([request.auth.uid]))
+        ))
+      );
+    }
+
+    // --- 4. Notifications ---
+    match /notifications/{notificationId} {
+      allow read: if isSignedIn() && isOwner(existing().userId);
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && isOwner(existing().userId) && 
+                    incoming().diff(existing()).affectedKeys().hasOnly(['read']);
+      allow delete: if isSignedIn() && isOwner(existing().userId);
+    }
+
+    // --- 5. Admins Collection ---
+    match /admins/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin(); // Only existing admins can add new admins
+    }
+  }
+}

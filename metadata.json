@@ -1,0 +1,6 @@
+{
+  "name": "Plan B Production - Video Review System",
+  "description": "Hệ thống review video chuyên nghiệp, đồng bộ hóa comment trực tiếp lên Google Sheets với frame-time chính xác.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

@@ -1,0 +1,84 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "The user's screen name", "maxLength": 100 },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "editor", "viewer"] }
+      },
+      "required": ["name", "role"]
+    },
+    "Video": {
+      "title": "Video",
+      "description": "A video project open for feedback.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "The title of the video" },
+        "youtubeUrl": { "type": "string", "description": "YouTube or direct link" },
+        "driveUrl": { "type": "string", "description": "Optional Google Drive link" },
+        "thumbnail": { "type": "string", "description": "Generated thumbnail URL" },
+        "editorIds": { "type": "array", "items": { "type": "string" }, "description": "IDs of the assigned editors" },
+        "ownerId": { "type": "string", "description": "ID of the video owner" },
+        "status": { "type": "string", "enum": ["Đang thực hiện", "Đang chờ duyệt", "Đã duyệt", "Đã hoàn thành", "Lịch feedback"] },
+        "deadline": { "type": "number", "description": "Deadline timestamp" },
+        "createdAt": { "type": "number", "description": "Timestamp" }
+      },
+      "required": ["title", "youtubeUrl", "createdAt", "status"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "Real-time user notification.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Target user ID" },
+        "type": { "type": "string", "enum": ["comment", "status", "deadline"] },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "videoId": { "type": "string" },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "number" },
+        "triggerUserId": { "type": "string", "description": "User who triggered the notification" }
+      },
+      "required": ["userId", "type", "title", "message", "videoId", "read", "createdAt"]
+    },
+    "Comment": {
+      "title": "Comment",
+      "description": "A feedback item on a video.",
+      "type": "object",
+      "properties": {
+        "videoId": { "type": "string" },
+        "userId": { "type": "string" },
+        "version": { "type": "string", "description": "e.g. Feedback 1" },
+        "content": { "type": "string" },
+        "attachmentUrl": { "type": "string", "description": "Optional image upload from ImageKit" },
+        "frameTime": { "type": "number", "description": "Time in seconds" },
+        "createdAt": { "type": "number" },
+        "resolved": { "type": "boolean" },
+        "priority": { "type": "string", "enum": ["Low", "Normal", "High"] },
+        "category": { "type": "string", "enum": ["Edit", "Audio", "Color", "Question", "General"] }
+      },
+      "required": ["videoId", "userId", "version", "content", "createdAt", "resolved"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Stores user profiles."
+    },
+    "/videos/{videoId}": {
+      "schema": { "$ref": "#/entities/Video" },
+      "description": "Stores details about video review projects."
+    },
+    "/comments/{commentId}": {
+      "schema": { "$ref": "#/entities/Comment" },
+      "description": "Stores all video feedback comments."
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/Notification" },
+      "description": "Stores real-time user notifications."
+    }
+  }
+}
